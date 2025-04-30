@@ -5,6 +5,7 @@ using System.Text.Json;
 using Azure;
 using Azure.Communication.Messages;
 using Azure.Messaging.EventGrid;
+using Billy.Function.AzureContentUnderstanding;
 using Billy.Function.Extensions;
 using Billy.Function.Models.ACM;
 using Microsoft.Azure.Functions.Worker;
@@ -12,7 +13,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Billy.Function;
 
-public class MessageReceived(ILogger<MessageReceived> _logger, NotificationMessagesClient _notificationMessagesClient, JsonSerializerOptions _jsonSerializerOptions)
+public class MessageReceived(
+    ILogger<MessageReceived> _logger, 
+    NotificationMessagesClient _notificationMessagesClient, 
+    AzureContentUnderstandingClient _azureContentUnderstandingClient,
+    JsonSerializerOptions _jsonSerializerOptions)
 {
     private static Guid _channelRegistrationId = Guid.Parse("37fe8c93-1377-4153-99a1-a58995a34f36");
 
@@ -36,7 +41,12 @@ public class MessageReceived(ILogger<MessageReceived> _logger, NotificationMessa
                     _logger.LogInformation("Media received: mimeType: {mimeType}, id: {id}, animated: {animated}",
                         message.Media.MimeType, message.Media.Id, message.Media.Animated);
                     await SendWhatsAppMessageAsync(message.From, "Received media with ID: " + message.Media.Id);
-                    await DownloadMediaWithStreamAsync(message.Media.Id);
+                    var filePath = await DownloadMediaWithStreamAsync(message.Media.Id);
+                    var responseMessage = await _azureContentUnderstandingClient.BeginAnalyzeAsync("BillAnalyzer", filePath);
+                    _logger.LogInformation("Response message: {responseMessage}", responseMessage.ToString());
+                    var result = await _azureContentUnderstandingClient.PollResultAsync(responseMessage);
+
+                    // File.Delete(filePath);
                 }
             }
         }
@@ -46,12 +56,13 @@ public class MessageReceived(ILogger<MessageReceived> _logger, NotificationMessa
         }
     }
 
-    public async Task DownloadMediaWithStreamAsync(Guid mediaId)
+    public async Task<string> DownloadMediaWithStreamAsync(Guid mediaId)
     {
         Response<Stream> fileResponse;
         try
         {
             // Download media to stream
+
             fileResponse = await _notificationMessagesClient.DownloadMediaAsync(mediaId.ToString());
 
             Console.WriteLine(fileResponse.ToString());
@@ -59,19 +70,19 @@ public class MessageReceived(ILogger<MessageReceived> _logger, NotificationMessa
         catch (RequestFailedException e)
         {
             _logger.LogError(e, "Failed to download media with ID {mediaId}", mediaId);
-            return;
+            throw;
         }
 
         var contentType = fileResponse.GetRawResponse().Headers.ContentType;
         string fileExtension = GetFileExtension(contentType);
 
         _logger.LogInformation("File extension: {fileExtension}", fileExtension);
-
+        string filePath = Path.Combine(Path.GetTempPath(), $"{mediaId}.{fileExtension}");
         // Write the media stream to the file
-        // using (Stream outStream = File.OpenWrite(filePath))
-        // {
-        //     fileResponse.Value.CopyTo(outStream);
-        // }
+        using Stream outStream = File.OpenWrite(filePath);
+        fileResponse.Value.CopyTo(outStream);
+
+        return filePath;
     }
 
     private async Task SendWhatsAppMessageAsync(string numberToRespondTo, string message)
