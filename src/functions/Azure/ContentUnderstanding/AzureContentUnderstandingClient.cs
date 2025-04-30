@@ -147,6 +147,23 @@ public class AzureContentUnderstandingClient
         }
     }
 
+    public string GetJsonFields(JsonDocument jsonDocument)
+    {
+        if (jsonDocument.RootElement.TryGetProperty("result", out var resultElement) &&
+            resultElement.TryGetProperty("contents", out var contentsElement) &&
+            contentsElement.ValueKind == JsonValueKind.Array &&
+            contentsElement.GetArrayLength() > 0)
+        {
+            var firstContent = contentsElement[0];
+            if (firstContent.TryGetProperty("fields", out var fieldsElement))
+            {
+                return fieldsElement.GetRawText(); // Return the "fields" field as a JSON string
+            }
+        }
+
+        throw new InvalidOperationException("The 'fields' field could not be found in the provided JSON document.");
+    }
+
     private string GetAnalyzeUrl(string endpoint, string apiVersion, string analyzerId)
     {
         return $"{endpoint}/contentunderstanding/analyzers/{analyzerId}:analyze?api-version={apiVersion}";

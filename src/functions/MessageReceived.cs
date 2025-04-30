@@ -7,7 +7,9 @@ using Azure.Communication.Messages;
 using Azure.Messaging.EventGrid;
 using Billy.Function.AzureContentUnderstanding;
 using Billy.Function.Extensions;
+using Billy.Function.Models;
 using Billy.Function.Models.ACM;
+using Billy.Function.Parsing;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
@@ -45,7 +47,24 @@ public class MessageReceived(
                     var responseMessage = await _azureContentUnderstandingClient.BeginAnalyzeAsync("BillAnalyzer", filePath);
                     _logger.LogInformation("Response message: {responseMessage}", responseMessage.ToString());
                     var result = await _azureContentUnderstandingClient.PollResultAsync(responseMessage);
-
+                    var json = _azureContentUnderstandingClient.GetJsonFields(result);
+                    Invoice invoice  = InvoiceParser.Parse(json);
+                    _logger.LogInformation($"Invoice Details:");
+                    _logger.LogInformation($"Customer: {invoice.CustomerName}");
+                    _logger.LogInformation($"Amount Due: {invoice.AmountDue}");
+                    _logger.LogInformation($"Invoice Date: {invoice.InvoiceDate:yyyy-MM-dd}");
+                    _logger.LogInformation($"Due Date: {invoice.DueDate:yyyy-MM-dd}");
+                    _logger.LogInformation($"Total Items: {invoice.Items?.Count ?? 0}");
+                    
+                    // Display item details if available
+                    if (invoice.Items != null && invoice.Items.Count > 0)
+                    {
+                        _logger.LogInformation("\nItem Details:");
+                        foreach (var item in invoice.Items)
+                        {
+                            _logger.LogInformation($"- {item.Description}: {item.TotalPrice}");
+                        }
+                    }
                     // File.Delete(filePath);
                 }
             }
@@ -65,7 +84,7 @@ public class MessageReceived(
 
             fileResponse = await _notificationMessagesClient.DownloadMediaAsync(mediaId.ToString());
 
-            Console.WriteLine(fileResponse.ToString());
+            _logger.LogInformation(fileResponse.ToString());
         }
         catch (RequestFailedException e)
         {
