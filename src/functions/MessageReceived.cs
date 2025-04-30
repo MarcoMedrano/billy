@@ -48,7 +48,7 @@ public class MessageReceived(
                     _logger.LogInformation("Response message: {responseMessage}", responseMessage.ToString());
                     var result = await _azureContentUnderstandingClient.PollResultAsync(responseMessage);
                     var json = _azureContentUnderstandingClient.GetJsonFields(result);
-                    Invoice invoice  = InvoiceParser.Parse(json);
+                    Invoice invoice  = GenericParser.ParseJson<Invoice>(json);
                     _logger.LogInformation($"Invoice Details:");
                     _logger.LogInformation($"Customer: {invoice.CustomerName}");
                     _logger.LogInformation($"Amount Due: {invoice.AmountDue}");
