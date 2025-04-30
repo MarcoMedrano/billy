@@ -3,7 +3,9 @@
 
 using System.Text.Json;
 using Azure;
+using Azure.AI.OpenAI;
 using Azure.Communication.Messages;
+using OpenAI.Chat;
 using Azure.Messaging.EventGrid;
 using Billy.Function.AzureContentUnderstanding;
 using Billy.Function.Extensions;
@@ -16,12 +18,16 @@ using Microsoft.Extensions.Logging;
 namespace Billy.Function;
 
 public class MessageReceived(
-    ILogger<MessageReceived> _logger, 
-    NotificationMessagesClient _notificationMessagesClient, 
+    ILogger<MessageReceived> _logger,
+    NotificationMessagesClient _notificationMessagesClient,
     AzureContentUnderstandingClient _azureContentUnderstandingClient,
+    AzureOpenAIClient _azureClient,
     JsonSerializerOptions _jsonSerializerOptions)
 {
     private static Guid _channelRegistrationId = Guid.Parse("37fe8c93-1377-4153-99a1-a58995a34f36");
+    private static string  model = "gpt-4.1-nano";
+    private static string  deploymentName = "gpt-4.1-nano";
+
 
     [Function(nameof(MessageReceived))]
     public async Task Run([EventGridTrigger] EventGridEvent eventGridEvent)
@@ -48,24 +54,32 @@ public class MessageReceived(
                     _logger.LogInformation("Response message: {responseMessage}", responseMessage.ToString());
                     var result = await _azureContentUnderstandingClient.PollResultAsync(responseMessage);
                     var json = _azureContentUnderstandingClient.GetJsonFields(result);
-                    Invoice invoice  = GenericParser.ParseJson<Invoice>(json);
-                    _logger.LogInformation($"Invoice Details:");
-                    _logger.LogInformation($"Customer: {invoice.CustomerName}");
-                    _logger.LogInformation($"Amount Due: {invoice.AmountDue}");
-                    _logger.LogInformation($"Invoice Date: {invoice.InvoiceDate:yyyy-MM-dd}");
-                    _logger.LogInformation($"Due Date: {invoice.DueDate:yyyy-MM-dd}");
-                    _logger.LogInformation($"Total Items: {invoice.Items?.Count ?? 0}");
-                    
-                    // Display item details if available
-                    if (invoice.Items != null && invoice.Items.Count > 0)
-                    {
-                        _logger.LogInformation("\nItem Details:");
-                        foreach (var item in invoice.Items)
-                        {
-                            _logger.LogInformation($"- {item.Description}: {item.TotalPrice}");
-                        }
-                    }
+                    Invoice invoice = GenericParser.ParseJson<Invoice>(json);
                     // File.Delete(filePath);
+                }
+                else if (string.IsNullOrEmpty(message.Content))
+                {
+                    ChatClient chatClient = _azureClient.GetChatClient(deploymentName);
+
+                    var requestOptions = new ChatCompletionOptions()
+                    {
+                        MaxOutputTokenCount = 100,
+                        Temperature = 1.0f,
+                        TopP = 1.0f,
+                        FrequencyPenalty = 0.0f,
+                        PresencePenalty = 0.0f
+                    };
+
+                    List<ChatMessage> messages = new List<ChatMessage>()
+                    {
+                        new SystemChatMessage("You are a helpful assistant."),
+                        new UserChatMessage(message.Content),
+                    };
+
+                    var response = chatClient.CompleteChat(messages, requestOptions);
+                    string messageResponse = response.Value.Content[0].Text;
+                    _logger.LogInformation(messageResponse);
+                    await SendWhatsAppMessageAsync(message.From, messageResponse);
                 }
             }
         }

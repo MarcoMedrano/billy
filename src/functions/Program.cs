@@ -6,6 +6,7 @@ var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.Services.AddNotificationMessagesClient();
 builder.Services.AddAzureContentUnderstandingClient();
+builder.Services.AddAzureOpenAIClient();
 builder.Services.AddJsonSerializerOptions();
 
 builder.ConfigureFunctionsWebApplication();

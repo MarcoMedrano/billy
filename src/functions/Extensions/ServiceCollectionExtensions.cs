@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Azure;
+using Azure.AI.OpenAI;
 using Azure.Communication.Messages;
 using Billy.Function.AzureContentUnderstanding;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +42,27 @@ public static class ServiceCollectionExtensions
         });
 
         return services;
+    }
 
+    public static IServiceCollection AddAzureOpenAIClient(this IServiceCollection services)
+    {
+        services.AddSingleton(provider =>
+        {
+            var endpoint = new Uri("https://marco-ma439rbt-eastus2.openai.azure.com/");
+            var apiKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+            var model = "gpt-4.1-nano";
+            var deploymentName = "gpt-4.1-nano";
+
+
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new InvalidOperationException("Environment variable 'AZURE_OPENAI_API_KEY' is not set.");
+            }
+
+            return new AzureOpenAIClient(endpoint, new AzureKeyCredential(apiKey));
+        });
+
+        return services;
     }
 
     public static IServiceCollection AddJsonSerializerOptions(this IServiceCollection services)
